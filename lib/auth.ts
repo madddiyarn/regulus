@@ -1,11 +1,10 @@
 import bcrypt from 'bcryptjs';
 import { SignJWT, jwtVerify } from 'jose';
-import { sql } from './db';
+import { getDb } from './db';
 import type { User } from './db';
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'your-secret-key-change-in-production'
-);
+const jwtSecretString = process.env.JWT_SECRET || 'orbital-collision-monitor-dev-secret-key-2026';
+const JWT_SECRET = new TextEncoder().encode(jwtSecretString);
 
 export interface SessionUser {
   id: number;
@@ -42,10 +41,11 @@ export async function verifyToken(token: string): Promise<SessionUser | null> {
 }
 
 export async function getUserByEmail(email: string): Promise<User | null> {
-  const users = await sql<User[]>`
+  const sql = getDb();
+  const users = await sql`
     SELECT * FROM users WHERE email = ${email} LIMIT 1
   `;
-  return users[0] || null;
+  return (users[0] as User) || null;
 }
 
 export async function createUser(
@@ -53,18 +53,19 @@ export async function createUser(
   password: string,
   name?: string
 ): Promise<User> {
+  const sql = getDb();
   const passwordHash = await hashPassword(password);
   
-  const users = await sql<User[]>`
+  const users = await sql`
     INSERT INTO users (email, password_hash, name)
     VALUES (${email}, ${passwordHash}, ${name || null})
     RETURNING *
   `;
-  
-  return users[0];
+  return users[0] as User;
 }
 
 export async function updateLastLogin(userId: number): Promise<void> {
+  const sql = getDb();
   await sql`
     UPDATE users 
     SET last_login = CURRENT_TIMESTAMP 
