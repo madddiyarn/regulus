@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
-import type { TLEData } from '@/lib/db';
+import { getDb } from '@/lib/db';
 import { computeSatellitePosition, calculateDistance, calculateRelativeVelocity } from '@/lib/orbital';
 
 /**
@@ -9,6 +8,7 @@ import { computeSatellitePosition, calculateDistance, calculateRelativeVelocity 
  */
 export async function POST(request: Request) {
   try {
+    const sql = getDb();
     const body = await request.json();
     const { 
       primarySatelliteId, 
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const primaryTLE = await sql<TLEData[]>`
+    const primaryTLE = await sql`
       SELECT * FROM tle_data 
       WHERE satellite_id = ${primarySatelliteId}
       ORDER BY epoch DESC
@@ -41,9 +41,9 @@ export async function POST(request: Request) {
 
     const primary = primaryTLE[0];
 
-    let secondaryTLEs: TLEData[];
+    let secondaryTLEs: any[];
     if (checkAgainstAll) {
-      secondaryTLEs = await sql<TLEData[]>`
+      secondaryTLEs = await sql`
         SELECT DISTINCT ON (satellite_id) *
         FROM tle_data
         WHERE satellite_id != ${primarySatelliteId}
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
         );
       }
       
-      secondaryTLEs = await sql<TLEData[]>`
+      secondaryTLEs = await sql`
         SELECT DISTINCT ON (satellite_id) *
         FROM tle_data
         WHERE satellite_id = ANY(${secondarySatelliteIds})
