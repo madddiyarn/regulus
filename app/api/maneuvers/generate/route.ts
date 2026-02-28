@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
-import type { CollisionRisk } from '@/lib/db';
+import { getDb } from '@/lib/db';
 
 /**
  * POST /api/maneuvers/generate - Generate collision avoidance maneuver using Mistral AI
@@ -10,6 +9,7 @@ import type { CollisionRisk } from '@/lib/db';
  */
 export async function POST(request: Request) {
   try {
+    const sql = getDb();
     const body = await request.json();
     const { collisionRiskId } = body;
 
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const collisionRisks = await sql<CollisionRisk[]>`
+    const collisionRisks = await sql`
       SELECT * FROM collision_risks WHERE id = ${collisionRiskId}
     `;
 
