@@ -1,36 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import dynamic from 'next/dynamic';
+import { OrbitVisualizer } from '@/components/orbit-visualizer-wrapper';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AlertTriangle, Satellite, Upload, Brain, LogOut, RefreshCw } from 'lucide-react';
-import { CSVUploader } from '@/components/csv-uploader';
-import { AIAssistant } from '@/components/ai-assistant';
+import { AlertTriangle, Satellite, Upload, Brain, LogOut } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-
-const OrbitCanvas = dynamic(() => import('@/components/orbit-visualizer-v2').then(m => m.default), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-full flex items-center justify-center bg-[#060c12]">
-      <div className="text-center space-y-3">
-        <div className="animate-spin rounded-full h-10 w-10 border-2 border-sky-400 border-t-transparent mx-auto" />
-        <p className="text-sm text-slate-400 font-mono">Loading orbit visualization...</p>
-      </div>
-    </div>
-  ),
-});
 
 interface SatelliteData {
   id: number;
   name: string;
   norad_id: string;
-  object_type?: string;
-  country?: string;
-  tle_line1?: string;
-  tle_line2?: string;
   orbitPath: Array<{ x: number; y: number; z: number; time?: Date }>;
   color?: string;
 }
@@ -55,8 +37,6 @@ export default function DashboardPage() {
   const [collisions, setCollisions] = useState<CollisionRisk[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTab, setSelectedTab] = useState('visualizer');
-  const [syncing, setSyncing] = useState(false);
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [user, setUser] = useState<{ email: string; name: string | null } | null>(null);
 
   useEffect(() => {
@@ -83,7 +63,7 @@ export default function DashboardPage() {
 
   async function loadSatellites() {
     try {
-      const res = await fetch('/api/satellites?limit=100');
+      const res = await fetch('/api/satellites?limit=10');
       
       if (!res.ok) {
         console.error('[v0] Failed to fetch satellites:', res.status);
@@ -100,7 +80,7 @@ export default function DashboardPage() {
       }
       
       const satellitesWithOrbits = await Promise.all(
-        data.satellites.map(async (sat: { id: number; name: string; norad_id: string; object_type?: string; country?: string; tle_line1?: string; tle_line2?: string }) => {
+        data.satellites.slice(0, 5).map(async (sat: { id: number; name: string; norad_id: string }) => {
           try {
             const orbitRes = await fetch(`/api/satellites/${sat.id}/orbit?duration=90&steps=100`);
             if (orbitRes.ok) {
@@ -109,11 +89,8 @@ export default function DashboardPage() {
                 id: sat.id,
                 name: sat.name,
                 norad_id: sat.norad_id,
-                object_type: sat.object_type,
-                country: sat.country,
-                tle_line1: sat.tle_line1,
-                tle_line2: sat.tle_line2,
                 orbitPath: orbitData.orbitPath,
+                color: `hsl(${Math.random() * 360}, 70%, 50%)`,
               };
             }
           } catch (err) {
@@ -147,27 +124,6 @@ export default function DashboardPage() {
     }
   }
 
-  async function handleSync() {
-    setSyncing(true);
-    setSyncMessage(null);
-    try {
-      const res = await fetch('/api/sync', { method: 'POST' });
-      const data = await res.json();
-      if (res.ok) {
-        setSyncMessage(`Обновлено: ${data.stats.imported} спутников за ${data.stats.duration_ms}мс`);
-        loadSatellites();
-        loadCollisions();
-      } else {
-        setSyncMessage(`Ошибка: ${data.error}`);
-      }
-    } catch {
-      setSyncMessage('Ошибка подключения к Space-Track.org');
-    } finally {
-      setSyncing(false);
-      setTimeout(() => setSyncMessage(null), 5000);
-    }
-  }
-
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/login');
@@ -197,32 +153,23 @@ export default function DashboardPage() {
 
   async function generateManeuver(collisionId: number) {
     try {
-      const res = await fetch('/api/ai/maneuver', {
+      const res = await fetch('/api/maneuvers/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ collisionRiskId: collisionId }),
       });
-
+      
       const data = await res.json();
-
-      if (res.ok && data.plan) {
-        const p = data.plan;
-        alert(
-          `Манёвр сгенерирован (${data.aiModel}):\n\n` +
-          `Тип: ${p.maneuverType}\n` +
-          `ΔV: ${p.deltaVMs} м/с\n` +
-          `Выполнить за: ${p.executionLeadTimeHours} ч до сближения\n` +
-          `Новое расстояние: ${p.expectedNewMissDistanceKm?.toFixed(1)} км\n` +
-          `Вероятность успеха: ${(p.successProbability * 100).toFixed(0)}%\n\n` +
-          `Обоснование: ${p.rationale}\n\n` +
-          (p.warningFlags?.length ? `Предупреждения:\n${p.warningFlags.join('\n')}` : '')
-        );
+      
+      if (res.ok) {
+        alert('Maneuver plan generated successfully!');
         loadCollisions();
       } else {
-        alert(data.error || 'Не удалось сгенерировать манёвр');
+        alert(data.message || data.error);
       }
     } catch (error) {
-      alert('Ошибка генерации манёвра');
+      console.error('[v0] Maneuver generation error:', error);
+      alert('Maneuver generation failed');
     }
   }
 
@@ -260,28 +207,16 @@ export default function DashboardPage() {
               Data from <span className="font-medium">Space-Track.org</span>
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            {syncMessage && (
-              <span className="text-sm text-muted-foreground">{syncMessage}</span>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSync}
-              disabled={syncing}
-            >
-              <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? 'Обновление...' : 'Обновить с Space-Track'}
-            </Button>
+          <div className="flex items-center gap-4">
             {user && (
-              <div className="text-sm hidden md:block">
-                <span className="text-muted-foreground">Вошли как</span>{' '}
+              <div className="text-sm">
+                <span className="text-muted-foreground">Logged in as</span>{' '}
                 <span className="font-medium">{user.email}</span>
               </div>
             )}
             <Button variant="outline" size="sm" onClick={handleLogout}>
               <LogOut className="w-4 h-4 mr-2" />
-              Выйти
+              Logout
             </Button>
           </div>
         </div>
@@ -308,37 +243,26 @@ export default function DashboardPage() {
         </div>
 
         <TabsContent value="visualizer" className="m-0">
-          <div style={{ height: 'calc(100vh - 120px)' }} className="w-full relative">
-            {satellites.length > 0 ? (
-              <OrbitCanvas
-                satellites={satellites.map((s) => ({
-                  id: s.id,
-                  name: s.name,
-                  norad_id: s.norad_id,
-                  object_type: s.object_type,
-                  country: s.country,
-                  tle_line1: s.tle_line1,
-                  tle_line2: s.tle_line2,
-                  color: s.color,
-                  orbitPath: s.orbitPath?.map((p: { x: number; y: number; z: number }) => [p.x, p.y, p.z] as [number, number, number]),
-                }))}
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-[#060c12]">
-                <div className="text-center space-y-4">
-                  <p className="text-slate-400 text-sm font-mono">
-                    {loading ? 'Loading satellite data...' : 'No satellite data found'}
-                  </p>
-                  {!loading && (
-                    <Button variant="outline" size="sm" onClick={() => setSelectedTab('import')}>
-                      <Upload className="w-4 h-4 mr-2" />
-                      Import Space-Track Data
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+          {satellites.length > 0 ? (
+            <OrbitVisualizer satellites={satellites} showLabels={true} />
+          ) : (
+            <div className="flex items-center justify-center h-[600px]">
+              <Card className="max-w-md">
+                <CardHeader>
+                  <CardTitle>No Satellite Data</CardTitle>
+                  <CardDescription>
+                    Please import TLE data from Space-Track.org to visualize orbits
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button onClick={() => setSelectedTab('import')}>
+                    <Upload className="w-4 h-4 mr-2" />
+                    Import Space-Track Data
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="collisions" className="container mx-auto px-4 py-6">
@@ -351,54 +275,17 @@ export default function DashboardPage() {
                 </p>
               </div>
               {satellites.length > 0 && (
-                <Button onClick={async () => {
-                  let total = 0;
-                  const warns: string[] = [];
-                  for (const sat of satellites.slice(0, 10)) {
-                    const res = await fetch('/api/collisions/detect', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ primarySatelliteId: sat.id, checkAgainstAll: true, timeHorizonHours: 72, thresholdKm: 10 }),
-                    });
-                    const d = await res.json();
-                    total += d.collisionsDetected || 0;
-                    if (d.warnings?.length) warns.push(...d.warnings);
-                  }
-                  alert([`Проверено ${Math.min(satellites.length, 10)} спутников. Найдено рисков: ${total}.`, ...new Set(warns)].join('\n'));
-                  loadCollisions();
-                }}>
+                <Button onClick={() => runCollisionDetection(satellites[0].id)}>
                   Run Collision Detection
                 </Button>
               )}
             </div>
 
-            {/* Algorithm explanation */}
-            <Card className="border-sky-200 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/40">
-              <CardContent className="pt-4 pb-3 space-y-2 text-sm">
-                <p className="font-semibold text-sky-900 dark:text-sky-200">Как работает расчёт</p>
-                <p className="text-sky-800 dark:text-sky-300">
-                  Используется <strong>SGP4 пропагация</strong> (библиотека satellite.js) на основе{' '}
-                  <strong>TLE данных от Space-Track.org</strong>. Позиции каждого спутника вычисляются
-                  в 200 временных точках на горизонте 72 часа. Если минимальное расстояние между
-                  двумя объектами падает ниже 10 км — событие фиксируется как потенциальное столкновение.
-                </p>
-                <p className="text-sky-700 dark:text-sky-400 text-xs">
-                  Точность напрямую зависит от свежести TLE. TLE старше 7 дней дают неточные позиции.
-                  Нажмите "Обновить с Space-Track" в шапке для актуальных данных.
-                  В БД сейчас {satellites.length} спутников —{' '}
-                  {satellites.length < 10
-                    ? 'слишком мало для полноценного анализа. Загрузите больше данных.'
-                    : 'достаточно для базового анализа.'}
-                </p>
-              </CardContent>
-            </Card>
-
             {collisions.length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center">
                   <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-muted-foreground">Активных рисков столкновений не обнаружено</p>
-                  <p className="text-xs text-muted-foreground mt-1">Нажмите "Run Collision Detection" для запуска анализа</p>
+                  <p className="text-muted-foreground">No active collision risks detected</p>
                 </CardContent>
               </Card>
             ) : (
@@ -467,53 +354,61 @@ export default function DashboardPage() {
         </TabsContent>
 
         <TabsContent value="import" className="container mx-auto px-4 py-6">
-          <div className="max-w-2xl mx-auto space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Import Space-Track.org Data</CardTitle>
-                <CardDescription>
-                  Upload CSV or TLE files downloaded from{' '}
-                  <a
-                    href="https://www.space-track.org"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline font-medium"
-                  >
-                    Space-Track.org
-                  </a>
-                  . No file size limit — import all your satellites at once.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <CSVUploader onImportComplete={() => { loadSatellites(); loadCollisions(); }} />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">How to get files from Space-Track.org</CardTitle>
-              </CardHeader>
-              <CardContent>
+          <Card className="max-w-2xl mx-auto">
+            <CardHeader>
+              <CardTitle>Import Space-Track Data</CardTitle>
+              <CardDescription>
+                Import TLE data, CDM files, or CSV from Space-Track.org
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-lg border border-border bg-muted p-4">
+                <h3 className="font-semibold mb-2">Data Source: Space-Track.org</h3>
                 <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
-                  <li>
-                    Register at{' '}
-                    <a href="https://www.space-track.org" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                      space-track.org
-                    </a>
-                  </li>
-                  <li>Go to <strong>Queries &rarr; GP Data (Latest TLE)</strong></li>
-                  <li>Filter by NORAD_CAT_ID or object type</li>
-                  <li>Select format: <strong>CSV</strong></li>
-                  <li>Download and drag the file here</li>
+                  <li>Register for a free account at <a href="https://www.space-track.org" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">space-track.org</a></li>
+                  <li>Download TLE data in CSV or 3LE format</li>
+                  <li>Use the API endpoint below to import the data</li>
                 </ol>
-              </CardContent>
-            </Card>
-          </div>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-semibold text-sm">API Endpoint</h4>
+                <code className="block bg-muted p-3 rounded text-xs">
+                  POST /api/import/space-track
+                </code>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-semibold text-sm">Example Request</h4>
+                <pre className="bg-muted p-3 rounded text-xs overflow-x-auto">
+{`{
+  "tleData": [
+    {
+      "norad_id": "25544",
+      "name": "ISS (ZARYA)",
+      "line1": "1 25544U 98067A   ...",
+      "line2": "2 25544  51.6461 ..."
+    }
+  ]
+}`}
+                </pre>
+              </div>
+
+              <div className="rounded-lg border border-yellow-200 bg-yellow-50 dark:bg-yellow-950 p-4">
+                <p className="text-sm text-yellow-900 dark:text-yellow-100">
+                  <strong>Note:</strong> You need to provide Space-Track data through the API. 
+                  Contact the system administrator to set up automated Space-Track data ingestion 
+                  or provide your Space-Track credentials.
+                </p>
+              </div>
+
+              <Button onClick={() => window.open('/api/import/space-track', '_blank')}>
+                View API Documentation
+              </Button>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
-
-      {/* Floating AI Assistant */}
-      <AIAssistant />
     </div>
   );
 }
