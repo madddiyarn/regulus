@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
-import type { Satellite, TLEData } from '@/lib/db';
+import { getDb } from '@/lib/db';
 
 /**
  * GET /api/satellites/[id] - Get satellite details with latest TLE
@@ -11,6 +10,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const sql = getDb();
     const { id } = await params;
     const satelliteId = parseInt(id);
 
@@ -21,7 +21,7 @@ export async function GET(
       );
     }
 
-    const satellites = await sql<Satellite[]>`
+    const satellites = await sql`
       SELECT * FROM satellites WHERE id = ${satelliteId}
     `;
 
@@ -34,7 +34,7 @@ export async function GET(
 
     const satellite = satellites[0];
 
-    const tleData = await sql<TLEData[]>`
+    const tleData = await sql`
       SELECT * FROM tle_data 
       WHERE satellite_id = ${satelliteId}
       ORDER BY epoch DESC
