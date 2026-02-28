@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlertTriangle, Satellite, Upload, Brain, LogOut, RefreshCw } from 'lucide-react';
 import { CSVUploader } from '@/components/csv-uploader';
+import { AIAssistant } from '@/components/ai-assistant';
 import { useRouter } from 'next/navigation';
 
 interface SatelliteData {
@@ -81,7 +82,6 @@ export default function DashboardPage() {
         return;
       }
       
-      // Load orbit paths for each satellite
       const satellitesWithOrbits = await Promise.all(
         data.satellites.map(async (sat: { id: number; name: string; norad_id: string }) => {
           try {
@@ -177,23 +177,32 @@ export default function DashboardPage() {
 
   async function generateManeuver(collisionId: number) {
     try {
-      const res = await fetch('/api/maneuvers/generate', {
+      const res = await fetch('/api/ai/maneuver', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ collisionRiskId: collisionId }),
       });
-      
+
       const data = await res.json();
-      
-      if (res.ok) {
-        alert('Maneuver plan generated successfully!');
+
+      if (res.ok && data.plan) {
+        const p = data.plan;
+        alert(
+          `Манёвр сгенерирован (${data.aiModel}):\n\n` +
+          `Тип: ${p.maneuverType}\n` +
+          `ΔV: ${p.deltaVMs} м/с\n` +
+          `Выполнить за: ${p.executionLeadTimeHours} ч до сближения\n` +
+          `Новое расстояние: ${p.expectedNewMissDistanceKm?.toFixed(1)} км\n` +
+          `Вероятность успеха: ${(p.successProbability * 100).toFixed(0)}%\n\n` +
+          `Обоснование: ${p.rationale}\n\n` +
+          (p.warningFlags?.length ? `Предупреждения:\n${p.warningFlags.join('\n')}` : '')
+        );
         loadCollisions();
       } else {
-        alert(data.message || data.error);
+        alert(data.error || 'Не удалось сгенерировать манёвр');
       }
     } catch (error) {
-      console.error('[v0] Maneuver generation error:', error);
-      alert('Maneuver generation failed');
+      alert('Ошибка генерации манёвра');
     }
   }
 
@@ -280,7 +289,10 @@ export default function DashboardPage() {
 
         <TabsContent value="visualizer" className="m-0">
           {satellites.length > 0 ? (
-            <OrbitVisualizer satellites={satellites} showLabels={true} />
+            <OrbitVisualizer satellites={satellites.map((s, i) => ({
+              ...s,
+              orbitPath: s.orbitPath?.map((p: { x: number; y: number; z: number }) => [p.x, p.y, p.z] as [number, number, number]),
+            }))} />
           ) : (
             <div className="flex items-center justify-center h-[600px]">
               <Card className="max-w-md">
@@ -311,17 +323,54 @@ export default function DashboardPage() {
                 </p>
               </div>
               {satellites.length > 0 && (
-                <Button onClick={() => runCollisionDetection(satellites[0].id)}>
+                <Button onClick={async () => {
+                  let total = 0;
+                  const warns: string[] = [];
+                  for (const sat of satellites.slice(0, 10)) {
+                    const res = await fetch('/api/collisions/detect', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ primarySatelliteId: sat.id, checkAgainstAll: true, timeHorizonHours: 72, thresholdKm: 10 }),
+                    });
+                    const d = await res.json();
+                    total += d.collisionsDetected || 0;
+                    if (d.warnings?.length) warns.push(...d.warnings);
+                  }
+                  alert([`Проверено ${Math.min(satellites.length, 10)} спутников. Найдено рисков: ${total}.`, ...new Set(warns)].join('\n'));
+                  loadCollisions();
+                }}>
                   Run Collision Detection
                 </Button>
               )}
             </div>
 
+            {/* Algorithm explanation */}
+            <Card className="border-blue-500/30 bg-blue-950/20">
+              <CardContent className="pt-4 pb-3 space-y-2 text-sm">
+                <p className="font-semibold text-blue-300">Как работает расчёт</p>
+                <p className="text-blue-200/80">
+                  Используется <strong>SGP4 пропагация</strong> (библиотека satellite.js) на основе
+                  {' '}<strong>TLE данных от Space-Track.org</strong>. Позиции каждого спутника вычисляются
+                  в 200 временных точках на горизонте 72 часа. Если минимальное расстояние между
+                  двумя объектами падает ниже 10 км — событие фиксируется как потенциальное столкновение.
+                </p>
+                <p className="text-blue-300/60 text-xs">
+                  Точность напрямую зависит от свежести TLE. TLE старше 7 дней дают неточные позиции.
+                  Нажмите "Обновить с Space-Track" в шапке для получения актуальных данных.
+                  В БД сейчас {satellites.length} спутников —{' '}
+                  {satellites.length < 10
+                    ? 'слишком мало для полноценного анализа. Загрузите больше данных.'
+                    : 'достаточно для базового анализа.'}
+                </p>
+              </CardContent>
+            </Card>
+
             {collisions.length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center">
                   <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-muted-foreground">No active collision risks detected</p>
+                  <p className="text-muted-foreground">Активных рисков столкновений не обнаружено</p>
+                  <p className="text-xs text-muted-foreground mt-1">Нажмите "Run Collision Detection" для запуска анализа</p>
                 </CardContent>
               </Card>
             ) : (
@@ -434,6 +483,9 @@ export default function DashboardPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Floating AI Assistant */}
+      <AIAssistant />
     </div>
   );
 }
