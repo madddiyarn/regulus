@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
-import type { TLEData } from '@/lib/db';
+import { getDb } from '@/lib/db';
 
 /**
  * POST /api/predictions - Generate trajectory prediction using LSTM ML model
@@ -9,6 +8,7 @@ import type { TLEData } from '@/lib/db';
  */
 export async function POST(request: Request) {
   try {
+    const sql = getDb();
     const body = await request.json();
     const { satelliteId, predictionHorizonHours = 24 } = body;
 
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const tleData = await sql<TLEData[]>`
+    const tleData = await sql`
       SELECT * FROM tle_data 
       WHERE satellite_id = ${satelliteId}
       ORDER BY epoch DESC
@@ -119,6 +119,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const satelliteId = searchParams.get('satelliteId');
     const limit = parseInt(searchParams.get('limit') || '10');
+    const sql = getDb();
 
     if (!satelliteId) {
       return NextResponse.json(
