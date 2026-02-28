@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 
+export const maxDuration = 60;
+
 function parseSpaceTrackCSV(csvText: string) {
   const lines = csvText.trim().split('\n');
   if (lines.length < 2) return [];
