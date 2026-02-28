@@ -12,10 +12,6 @@ export interface TLELines {
   line2: string;
 }
 
-/**
- * Parse TLE and compute satellite position at given time
- * TLE data sourced from Space-Track.org
- */
 export function computeSatellitePosition(
   tleLine1: string,
   tleLine2: string,
@@ -46,14 +42,6 @@ export function computeSatellitePosition(
   }
 }
 
-/**
- * Generate orbital path points for visualization
- * @param tleLine1 TLE Line 1 from Space-Track
- * @param tleLine2 TLE Line 2 from Space-Track
- * @param startDate Start date for path
- * @param durationMinutes Duration in minutes
- * @param steps Number of points to generate
- */
 export function generateOrbitPath(
   tleLine1: string,
   tleLine2: string,
@@ -76,9 +64,6 @@ export function generateOrbitPath(
   return positions;
 }
 
-/**
- * Calculate distance between two positions in kilometers
- */
 export function calculateDistance(
   pos1: { x: number; y: number; z: number },
   pos2: { x: number; y: number; z: number }
@@ -89,9 +74,6 @@ export function calculateDistance(
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-/**
- * Calculate relative velocity between two satellites
- */
 export function calculateRelativeVelocity(
   tleLine1_sat1: string,
   tleLine2_sat1: string,
@@ -129,9 +111,6 @@ export function calculateRelativeVelocity(
   }
 }
 
-/**
- * Parse TLE epoch to JavaScript Date
- */
 export function parseTLEEpoch(tleLine1: string): Date | null {
   try {
     const epochStr = tleLine1.substring(18, 32).trim();
@@ -149,10 +128,6 @@ export function parseTLEEpoch(tleLine1: string): Date | null {
   }
 }
 
-/**
- * Extract orbital elements from TLE
- * Data format from Space-Track.org
- */
 export function extractOrbitalElements(tleLine1: string, tleLine2: string) {
   try {
     const satrec = satellite.twoline2satrec(tleLine1, tleLine2);
