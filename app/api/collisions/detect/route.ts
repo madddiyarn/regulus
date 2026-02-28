@@ -26,9 +26,10 @@ export async function POST(request: Request) {
     }
 
     const primaryTLE = await sql`
-      SELECT * FROM tle_data 
-      WHERE satellite_id = ${primarySatelliteId}
-      ORDER BY epoch DESC
+      SELECT t.*, s.name as sat_name FROM tle_data t
+      JOIN satellites s ON s.id = t.satellite_id
+      WHERE t.satellite_id = ${primarySatelliteId}
+      ORDER BY t.epoch DESC
       LIMIT 1
     `;
 
@@ -40,6 +41,11 @@ export async function POST(request: Request) {
     }
 
     const primary = primaryTLE[0];
+
+    const tleAge = primary.epoch
+      ? Math.floor((Date.now() - new Date(primary.epoch).getTime()) / (1000 * 60 * 60 * 24))
+      : null;
+    const tleStale = tleAge !== null && tleAge > 7;
 
     let secondaryTLEs: any[];
     if (checkAgainstAll) {
@@ -75,7 +81,7 @@ export async function POST(request: Request) {
     }> = [];
 
     const now = new Date();
-    const timeSteps = 100; // Check 100 points over the time horizon
+    const timeSteps = 200;
     const stepMs = (timeHorizonHours * 60 * 60 * 1000) / timeSteps;
 
     for (const secondary of secondaryTLEs) {
@@ -172,17 +178,31 @@ export async function POST(request: Request) {
       }
     }
 
+    const warnings: string[] = [];
+    if (tleStale) {
+      warnings.push(`TLE data is ${tleAge} days old — results may be inaccurate. Update via Space-Track.org.`);
+    }
+    if (secondaryTLEs.length < 2) {
+      warnings.push('Very few satellites in database. Import more TLE data from Space-Track.org for meaningful collision analysis.');
+    }
+
     return NextResponse.json({
       primarySatelliteId,
       primaryNoradId: primary.norad_id,
+      primaryName: primary.sat_name,
       collisionsDetected: collisions.length,
       collisions,
       timeHorizonHours,
       thresholdKm,
-      dataSource: 'Space-Track.org TLE',
-      message: collisions.length > 0 
-        ? `Detected ${collisions.length} potential collision(s)` 
-        : 'No collisions detected within threshold',
+      checkedAgainst: secondaryTLEs.length,
+      tlePrimaryAgedays: tleAge,
+      tleDataFresh: !tleStale,
+      warnings,
+      algorithm: 'SGP4 propagation via satellite.js, TLE data from Space-Track.org',
+      dataSource: 'Space-Track.org',
+      message: collisions.length > 0
+        ? `Detected ${collisions.length} potential collision(s) within ${thresholdKm}km over ${timeHorizonHours}h`
+        : `No collisions detected within ${thresholdKm}km threshold over ${timeHorizonHours}h`,
     });
   } catch (error) {
     console.error('[v0] Collision detection error:', error);
