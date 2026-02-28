@@ -9,14 +9,12 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@ai-sdk/react": "^3.0.0",
     "@neondatabase/serverless": "^0.10.1",
-    "@react-three/drei": "9.117.3",
-    "@react-three/fiber": "8.17.14",
-    "@types/three": "^0.169.0",
+    "ai": "^6.0.0",
     "bcryptjs": "^2.4.3",
     "jose": "^5.9.6",
     "satellite.js": "^5.0.0",
-    "three": "0.169.0",
     "@hookform/resolvers": "^3.9.1",
     "@radix-ui/react-accordion": "1.2.2",
     "@radix-ui/react-alert-dialog": "1.1.4",
@@ -80,8 +78,7 @@
   "pnpm": {
     "overrides": {
       "@types/react": "19.2.7",
-      "@types/react-dom": "19.2.3",
-      "three": "0.169.0"
+      "@types/react-dom": "19.2.3"
     }
   }
 }
